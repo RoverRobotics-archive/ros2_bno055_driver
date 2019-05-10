@@ -21,8 +21,12 @@ find_package(ament_cmake_ros REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(serial REQUIRED)
 
-add_library(bno055_driver src/bno055_driver.cpp)
+add_executable(bno055_driver
+  src/bno055_driver.cpp
+  src/bno055_uart.cpp
+  src/main.cpp)
 target_include_directories(bno055_driver PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
@@ -31,23 +35,23 @@ ament_target_dependencies(
   "lifecycle_msgs"
   "rclcpp_lifecycle"
   "sensor_msgs"
+  "serial"
+)
+
+target_link_libraries(bno055_driver
+  ${lifecycle_msgs_LIBRARIES}
+  ${rclcpp_lifecycle_LIBRARIES}
+  ${sensor_msgs_LIBRARIES}
+  ${serial_LIBRARIES}
 )
 
 # Causes the visibility macros to use dllexport rather than dllimport,
 # which is appropriate when building the dll but not consuming it.
 target_compile_definitions(bno055_driver PRIVATE "BNO055_DRIVER_BUILDING_LIBRARY")
 
-install(
-  DIRECTORY include/
-  DESTINATION include
-)
-install(
-  TARGETS bno055_driver
+install(TARGETS bno055_driver
   EXPORT export_${PROJECT_NAME}
-  ARCHIVE DESTINATION lib
-  LIBRARY DESTINATION lib
-  RUNTIME DESTINATION bin
-)
+  DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -59,15 +63,5 @@ if(BUILD_TESTING)
   #set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 endif()
-
-ament_export_include_directories(
-  include
-)
-ament_export_interfaces(
-  export_${PROJECT_NAME}
-)
-ament_export_libraries(
-  bno055_driver
-)
 
 ament_package()

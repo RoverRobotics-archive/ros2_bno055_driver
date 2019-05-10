@@ -1,14 +1,462 @@
+// Copyright 2019 Open Source Robotics Foundation, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include <chrono>
+
 #include "bno055_driver/bno055_driver.hpp"
+
+#define bytes_to_ushort(addr) (*((uint16_t *)addr))
+#define bytes_to_short(addr) (*((int16_t *)addr))
+
+using namespace std::chrono_literals;
 
 namespace bno055_driver
 {
 
-Bno055Driver::Bno055Driver()
+BNO055Driver::BNO055Driver(const std::string & node_name)
+  : rclcpp_lifecycle::LifecycleNode(node_name)
 {
+  RCLCPP_INFO(get_logger(), "%s is called.", __func__);
+
+  rclcpp::node_interfaces::NodeParametersInterface::SharedPtr params =
+    get_node_parameters_interface();
+
+  params->declare_parameter("frame_id",
+    rclcpp::ParameterValue("imu_link"),
+    rcl_interfaces::msg::ParameterDescriptor());
+  params->declare_parameter("frequency",
+    rclcpp::ParameterValue(30.0f),
+    rcl_interfaces::msg::ParameterDescriptor());
+  params->declare_parameter("port",
+    rclcpp::ParameterValue("/dev/ttyUSB0"),
+    rcl_interfaces::msg::ParameterDescriptor());
+  params->declare_parameter("self_manage",
+    rclcpp::ParameterValue(false),
+    rcl_interfaces::msg::ParameterDescriptor());
+
+  params->declare_parameter("calibration/accelerometer_offset",
+    rclcpp::ParameterValue(),
+    rcl_interfaces::msg::ParameterDescriptor());
+  params->declare_parameter("calibration/gyroscope_offset",
+    rclcpp::ParameterValue(),
+    rcl_interfaces::msg::ParameterDescriptor());
+  params->declare_parameter("calibration/magnetometer_offset",
+    rclcpp::ParameterValue(),
+    rcl_interfaces::msg::ParameterDescriptor());
+  params->declare_parameter("calibration/accelerometer_radius",
+    rclcpp::ParameterValue(),
+    rcl_interfaces::msg::ParameterDescriptor());
+  params->declare_parameter("calibration/magnetometer_radius",
+    rclcpp::ParameterValue(),
+    rcl_interfaces::msg::ParameterDescriptor());
+
+  change_state_request_ = std::make_shared<lifecycle_msgs::srv::ChangeState::Request>();
+  change_state_client_ = this->create_client<lifecycle_msgs::srv::ChangeState>(
+    std::string(get_name()) + "/change_state",
+    rmw_qos_profile_services_default,
+    nullptr);
+
+  if (get_parameter("self_manage").get_value<bool>()) {
+    RCLCPP_INFO(get_logger(), "Self-transitioning to INACTIVE");
+    change_state_request_->transition.id = lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE;
+    change_state_request_->transition.label = "";
+    change_state_future_ = change_state_client_->async_send_request(change_state_request_);
+  }
 }
 
-Bno055Driver::~Bno055Driver()
+rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
+  BNO055Driver::on_configure(const rclcpp_lifecycle::State &)
 {
+  RCLCPP_INFO(get_logger(), "%s is called.", __func__);
+
+  rclcpp::Parameter port_name = get_parameter("port");
+  port_ = std::make_shared<BNO055UART>(port_name.get_value<std::string>());
+  RCLCPP_DEBUG(get_logger(), "Opened connection to '%s'.", port_->getPort().c_str());
+
+  // Switch to register page 0
+  port_->write_command_.length = 1;
+  port_->write_command_.address = BNO055Register::PAGE_ID;
+  port_->write_command_.data[0] = 0;
+  port_->write();
+
+  // Read the chip ID
+  port_->read_command_.length = 1;
+  port_->read_command_.address = BNO055Register::CHIP_ID;
+  port_->read();
+  if (port_->read_response_.data[0] != 0xA0) {
+    RCLCPP_DEBUG(get_logger(), "Invalid BNO055 chip ID: 0x%02X", port_->read_response_.data[0]);
+    return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::ERROR;
+  }
+
+  // Switch to config mode
+  port_->write_command_.address = BNO055Register::OPR_MODE;
+  port_->write_command_.data[0] = BNO055OperationMode::CONFIG;
+  port_->write();
+
+  // Set the units
+  port_->write_command_.address = BNO055Register::UNIT_SEL;
+  port_->write_command_.data[0] = 0x02;
+  port_->write();
+
+  // Set power mode
+  port_->write_command_.address = BNO055Register::PWR_MODE;
+  port_->write_command_.data[0] = BNO055PowerMode::NORMAL;
+  port_->write();
+
+  // Select internal oscillator
+  port_->write_command_.address = BNO055Register::SYS_TRIGGER;
+  port_->write_command_.data[0] = 0x00;
+  port_->write();
+
+  // If given, set the calibration
+  rclcpp::Parameter accelerometer_offset_param;
+  if (get_parameter("calibration/accelerometer_offset", accelerometer_offset_param)) {
+    std::vector<int64_t> accelerometer_offset = accelerometer_offset_param.get_value<std::vector<int64_t>>();
+
+    if (accelerometer_offset.size() != 3) {
+      RCLCPP_ERROR(get_logger(), "Invalid value for calibration/accelerometer_offset");
+    }
+    else
+    {
+      RCLCPP_INFO(get_logger(), "Setting accelerometer calibration offsets");
+
+      port_->write_command_.address = BNO055Register::ACC_OFFSET_X_LSB;
+      port_->write_command_.length = 6;
+      port_->write_command_.data[0] = accelerometer_offset[0] & 0xFF;
+      port_->write_command_.data[1] = accelerometer_offset[0] >> 8 & 0xFF;
+      port_->write_command_.data[2] = accelerometer_offset[1] & 0xFF;
+      port_->write_command_.data[3] = accelerometer_offset[1] >> 8 & 0xFF;
+      port_->write_command_.data[4] = accelerometer_offset[2] & 0xFF;
+      port_->write_command_.data[5] = accelerometer_offset[2] >> 8 & 0xFF;
+      port_->write();
+    }
+  }
+
+  rclcpp::Parameter gyroscope_offset_param;
+  if (get_parameter("calibration/gyroscope_offset", gyroscope_offset_param)) {
+    std::vector<int64_t> gyroscope_offset = gyroscope_offset_param.get_value<std::vector<int64_t>>();
+
+    if (gyroscope_offset.size() != 3) {
+      RCLCPP_ERROR(get_logger(), "Invalid value for calibration/gyroscope_offset");
+    }
+    else
+    {
+      RCLCPP_INFO(get_logger(), "Setting gyroscope calibration offsets");
+
+      port_->write_command_.address = BNO055Register::GYR_OFFSET_X_LSB;
+      port_->write_command_.length = 6;
+      port_->write_command_.data[0] = gyroscope_offset[0] & 0xFF;
+      port_->write_command_.data[1] = gyroscope_offset[0] >> 8 & 0xFF;
+      port_->write_command_.data[2] = gyroscope_offset[1] & 0xFF;
+      port_->write_command_.data[3] = gyroscope_offset[1] >> 8 & 0xFF;
+      port_->write_command_.data[4] = gyroscope_offset[2] & 0xFF;
+      port_->write_command_.data[5] = gyroscope_offset[2] >> 8 & 0xFF;
+      port_->write();
+    }
+  }
+
+  rclcpp::Parameter magnetometer_offset_param;
+  if (get_parameter("calibration/magnetometer_offset", magnetometer_offset_param)) {
+    std::vector<int64_t> magnetometer_offset = magnetometer_offset_param.get_value<std::vector<int64_t>>();
+
+    if (magnetometer_offset.size() != 3) {
+      RCLCPP_ERROR(get_logger(), "Invalid value for calibration/magnetometer_offset");
+    }
+    else
+    {
+      RCLCPP_INFO(get_logger(), "Setting magnetometer calibration offsets");
+
+      port_->write_command_.address = BNO055Register::MAG_OFFSET_X_LSB;
+      port_->write_command_.length = 6;
+      port_->write_command_.data[0] = magnetometer_offset[0] & 0xFF;
+      port_->write_command_.data[1] = (magnetometer_offset[0] >> 8) & 0xFF;
+      port_->write_command_.data[2] = magnetometer_offset[1] & 0xFF;
+      port_->write_command_.data[3] = (magnetometer_offset[1] >> 8) & 0xFF;
+      port_->write_command_.data[4] = magnetometer_offset[2] & 0xFF;
+      port_->write_command_.data[5] = (magnetometer_offset[2] >> 8) & 0xFF;
+      port_->write();
+    }
+  }
+
+  rclcpp::Parameter accelerometer_radius_param;
+  if(get_parameter("calibration/accelerometer_radius", accelerometer_radius_param)) {
+      int64_t accelerometer_radius = accelerometer_radius_param.get_value<int64_t>();
+
+      RCLCPP_INFO(get_logger(), "Setting accelerometer calibration radius");
+
+      port_->write_command_.address = BNO055Register::ACC_RADIUS_LSB;
+      port_->write_command_.length = 2;
+      port_->write_command_.data[0] = accelerometer_radius & 0xFF;
+      port_->write_command_.data[1] = (accelerometer_radius >> 8) & 0xFF;
+      port_->write();
+  }
+
+  rclcpp::Parameter magnetometer_radius_param;
+  if(get_parameter("calibration/magnetometer_radius", magnetometer_radius_param)) {
+      int64_t magnetometer_radius = magnetometer_radius_param.get_value<int64_t>();
+
+      RCLCPP_INFO(get_logger(), "Setting magnetometer calibration radius");
+
+      port_->write_command_.address = BNO055Register::MAG_RADIUS_LSB;
+      port_->write_command_.length = 2;
+      port_->write_command_.data[0] = magnetometer_radius & 0xFF;
+      port_->write_command_.data[1] = (magnetometer_radius >> 8) & 0xFF;
+      port_->write();
+  }
+
+  imu_msg_ = std::make_shared<sensor_msgs::msg::Imu>();
+  imu_pub_ = this->create_publisher<sensor_msgs::msg::Imu>("imu/data", 1);
+  mag_msg_ = std::make_shared<sensor_msgs::msg::MagneticField>();
+  mag_pub_ = this->create_publisher<sensor_msgs::msg::MagneticField>("imu/mag", 1);
+  tmp_msg_ = std::make_shared<sensor_msgs::msg::Temperature>();
+  tmp_pub_ = this->create_publisher<sensor_msgs::msg::Temperature>("imu/temp", 1);
+
+  rclcpp::Parameter frame_id = get_parameter("frame_id");
+  imu_msg_->header.frame_id = frame_id.get_value<std::string>();
+  mag_msg_->header.frame_id = frame_id.get_value<std::string>();
+  tmp_msg_->header.frame_id = frame_id.get_value<std::string>();
+
+  rclcpp::Parameter frequency = get_parameter("frequency");
+  imu_timer_ = create_wall_timer(
+    std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<double>(
+      1.0 / frequency.get_value<float>())),
+    std::bind(&BNO055Driver::publish, this));
+
+  if (get_parameter("self_manage").get_value<bool>()) {
+    RCLCPP_INFO(get_logger(), "Self-transitioning to ACTIVE");
+    change_state_request_->transition.id = lifecycle_msgs::msg::Transition::TRANSITION_ACTIVATE;
+    change_state_future_ = change_state_client_->async_send_request(change_state_request_);
+  }
+
+  return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+}
+
+rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
+  BNO055Driver::on_cleanup(const rclcpp_lifecycle::State &)
+{
+  RCLCPP_INFO(get_logger(), "%s is called.", __func__);
+
+  imu_timer_.reset();
+  tmp_pub_.reset();
+  tmp_msg_.reset();
+  mag_pub_.reset();
+  mag_msg_.reset();
+  imu_pub_.reset();
+  imu_msg_.reset();
+
+  // Switch to config mode
+  port_->write_command_.address = BNO055Register::OPR_MODE;
+  port_->write_command_.length = 1;
+  port_->write_command_.data[0] = BNO055OperationMode::CONFIG;
+  port_->write();
+
+  port_->close();
+  port_.reset();
+
+  return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+}
+
+rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
+  BNO055Driver::on_activate(const rclcpp_lifecycle::State &)
+{
+  RCLCPP_INFO(get_logger(), "%s is called.", __func__);
+
+  // Switch to NDOF mode
+  port_->write_command_.address = BNO055Register::OPR_MODE;
+  port_->write_command_.length = 1;
+  port_->write_command_.data[0] = BNO055OperationMode::NDOF;
+  port_->write();
+
+  imu_pub_->on_activate();
+  mag_pub_->on_activate();
+  tmp_pub_->on_activate();
+
+  return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+}
+
+rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
+  BNO055Driver::on_deactivate(const rclcpp_lifecycle::State &)
+{
+  RCLCPP_INFO(get_logger(), "%s is called.", __func__);
+
+  mag_pub_->on_deactivate();
+  imu_pub_->on_deactivate();
+  tmp_pub_->on_deactivate();
+
+  // Switch to config mode
+  port_->write_command_.address = BNO055Register::OPR_MODE;
+  port_->write_command_.length = 1;
+  port_->write_command_.data[0] = BNO055OperationMode::CONFIG;
+  port_->write();
+
+  // Now that we're back in config mode, pull the calibration values
+  port_->read_command_.address = BNO055Register::ACC_OFFSET_X_LSB;
+  port_->read_command_.length = 22;
+  port_->read();
+  set_parameters(std::vector<rclcpp::Parameter> {
+      rclcpp::Parameter("calibration/accelerometer_offset",
+        std::vector<int64_t> {
+	  bytes_to_short(&port_->read_response_.data[0]),
+          bytes_to_short(&port_->read_response_.data[2]),
+	  bytes_to_short(&port_->read_response_.data[4]),
+	}),
+      rclcpp::Parameter("calibration/magnetometer_offset",
+        std::vector<int64_t> {
+	  bytes_to_short(&port_->read_response_.data[6]),
+          bytes_to_short(&port_->read_response_.data[8]),
+	  bytes_to_short(&port_->read_response_.data[10]),
+	}),
+      rclcpp::Parameter("calibration/gyroscope_offset",
+        std::vector<int64_t> {
+	  bytes_to_short(&port_->read_response_.data[12]),
+          bytes_to_short(&port_->read_response_.data[14]),
+	  bytes_to_short(&port_->read_response_.data[16]),
+	}),
+      rclcpp::Parameter("calibration/accelerometer_radius",
+        bytes_to_short(&port_->read_response_.data[18])),
+      rclcpp::Parameter("calibration/magnetometer_radius",
+        bytes_to_short(&port_->read_response_.data[20])),
+    });
+
+  return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+}
+
+rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
+  BNO055Driver::on_shutdown(const rclcpp_lifecycle::State &)
+{
+  RCLCPP_INFO(get_logger(), "%s is called.", __func__);
+
+  imu_timer_.reset();
+  tmp_pub_.reset();
+  tmp_msg_.reset();
+  mag_pub_.reset();
+  mag_msg_.reset();
+  imu_pub_.reset();
+  imu_msg_.reset();
+
+  if (port_ && port_->isOpen()) {
+    port_->close();
+  }
+
+  port_.reset();
+
+  change_state_client_.reset();
+  change_state_request_.reset();
+
+  return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+}
+
+rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
+  BNO055Driver::on_error(const rclcpp_lifecycle::State &)
+{
+  RCLCPP_INFO(get_logger(), "%s is called.", __func__);
+
+  imu_timer_.reset();
+  tmp_pub_.reset();
+  tmp_msg_.reset();
+  mag_pub_.reset();
+  mag_msg_.reset();
+  imu_pub_.reset();
+  imu_msg_.reset();
+
+  if (port_ && port_->isOpen()) {
+    port_->close();
+  }
+
+  port_.reset();
+
+  if (get_parameter("self_manage").get_value<bool>()) {
+    RCLCPP_INFO(get_logger(), "Self-transitioning to INACTIVE");
+    change_state_request_->transition.id = lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE;
+    change_state_request_->transition.label = "";
+    change_state_future_ = change_state_client_->async_send_request(change_state_request_);
+  }
+
+  return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+}
+
+void BNO055Driver::publish() try
+{
+  RCLCPP_DEBUG(get_logger(), "Querying for current IMU data");
+
+  port_->read_command_.address = BNO055Register::MAG_DATA_X_LSB;
+  port_->read_command_.length = 40;
+  port_->read();
+
+  rclcpp::Time stamp = now();
+
+  if (imu_pub_->is_activated()) {
+    imu_msg_->header.stamp = stamp;
+    imu_msg_->angular_velocity.x = bytes_to_short(&port_->read_response_.data[6]) / 900.0;
+    imu_msg_->angular_velocity.y = bytes_to_short(&port_->read_response_.data[8]) / 900.0;
+    imu_msg_->angular_velocity.z = bytes_to_short(&port_->read_response_.data[10]) / 900.0;
+    imu_msg_->linear_acceleration.x = bytes_to_short(&port_->read_response_.data[26]) / 1000.0;
+    imu_msg_->linear_acceleration.y = bytes_to_short(&port_->read_response_.data[28]) / 1000.0;
+    imu_msg_->linear_acceleration.z = bytes_to_short(&port_->read_response_.data[30]) / 1000.0;
+    imu_msg_->orientation.w = bytes_to_short(&port_->read_response_.data[18]) / 16384.0;
+    imu_msg_->orientation.x = bytes_to_short(&port_->read_response_.data[20]) / 16384.0;
+    imu_msg_->orientation.y = bytes_to_short(&port_->read_response_.data[22]) / 16384.0;
+    imu_msg_->orientation.z = bytes_to_short(&port_->read_response_.data[24]) / 16384.0;
+
+    imu_pub_->publish(*imu_msg_);
+  }
+
+  if (mag_pub_->is_activated()) {
+    mag_msg_->header.stamp = stamp;
+    mag_msg_->magnetic_field.x = bytes_to_short(&port_->read_response_.data[0]) / 16000000.0;
+    mag_msg_->magnetic_field.y = bytes_to_short(&port_->read_response_.data[2]) / 16000000.0;
+    mag_msg_->magnetic_field.z = bytes_to_short(&port_->read_response_.data[4]) / 16000000.0;
+
+    mag_pub_->publish(*mag_msg_);
+  }
+
+  if (tmp_pub_->is_activated()) {
+    tmp_msg_->header.stamp = stamp;
+    tmp_msg_->temperature = port_->read_response_.data[38];
+
+    tmp_pub_->publish(*tmp_msg_);
+  }
+
+  if (!tmp_pub_->is_activated()) {
+    return;
+  }
+
+  port_->read_command_.address = BNO055Register::ACC_OFFSET_X_LSB;
+  port_->read_command_.length = 22;
+  port_->read();
+
+  RCLCPP_DEBUG(get_logger(),
+    "Calibration: SYS: %d GYR: %d ACC: %d MAG: %d\n             ACC: [%d, %d, %d]\n             MAG: [%d, %d, %d]\n             GYR: [%d, %d, %d]\n             ACC_RADIUS: %d\n             MAG_RADIUS: %d",
+    (port_->read_response_.data[39] >> 0) & 0x03,
+    (port_->read_response_.data[39] >> 2) & 0x03,
+    (port_->read_response_.data[39] >> 4) & 0x03,
+    (port_->read_response_.data[39] >> 6) & 0x03,
+    bytes_to_short(&port_->read_response_.data[0]),
+    bytes_to_short(&port_->read_response_.data[2]),
+    bytes_to_short(&port_->read_response_.data[4]),
+    bytes_to_short(&port_->read_response_.data[6]),
+    bytes_to_short(&port_->read_response_.data[8]),
+    bytes_to_short(&port_->read_response_.data[10]),
+    bytes_to_short(&port_->read_response_.data[12]),
+    bytes_to_short(&port_->read_response_.data[14]),
+    bytes_to_short(&port_->read_response_.data[16]),
+    bytes_to_short(&port_->read_response_.data[18]),
+    bytes_to_short(&port_->read_response_.data[20]));
+} catch (std::exception &e) {
+  RCLCPP_ERROR(get_logger(), "Failed to poll and publish data");
+  deactivate();
+  //trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_ON_ACTIVATE_ERROR);
 }
 
 }  // namespace bno055_driver
