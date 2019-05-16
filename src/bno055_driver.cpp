@@ -19,8 +19,6 @@
 #define bytes_to_ushort(addr) (*((uint16_t *)addr))
 #define bytes_to_short(addr) (*((int16_t *)addr))
 
-using namespace std::chrono_literals;
-
 namespace bno055_driver
 {
 
@@ -33,7 +31,7 @@ BNO055Driver::BNO055Driver(const std::string & node_name)
     get_node_parameters_interface();
 
   params->declare_parameter("frame_id",
-    rclcpp::ParameterValue("imu_link"),
+    rclcpp::ParameterValue(),
     rcl_interfaces::msg::ParameterDescriptor());
   params->declare_parameter("frequency",
     rclcpp::ParameterValue(30.0f),
@@ -43,6 +41,19 @@ BNO055Driver::BNO055Driver(const std::string & node_name)
     rcl_interfaces::msg::ParameterDescriptor());
   params->declare_parameter("self_manage",
     rclcpp::ParameterValue(false),
+    rcl_interfaces::msg::ParameterDescriptor());
+
+  params->declare_parameter("angular_velocity_stdev",
+    rclcpp::ParameterValue(),
+    rcl_interfaces::msg::ParameterDescriptor());
+  params->declare_parameter("linear_acceleration_stdev",
+    rclcpp::ParameterValue(),
+    rcl_interfaces::msg::ParameterDescriptor());
+  params->declare_parameter("magnetic_field_stdev",
+    rclcpp::ParameterValue(),
+    rcl_interfaces::msg::ParameterDescriptor());
+  params->declare_parameter("orientation_stdev",
+    rclcpp::ParameterValue(),
     rcl_interfaces::msg::ParameterDescriptor());
 
   params->declare_parameter("calibration/accelerometer_offset",
@@ -61,13 +72,13 @@ BNO055Driver::BNO055Driver(const std::string & node_name)
     rclcpp::ParameterValue(),
     rcl_interfaces::msg::ParameterDescriptor());
 
-  change_state_request_ = std::make_shared<lifecycle_msgs::srv::ChangeState::Request>();
-  change_state_client_ = this->create_client<lifecycle_msgs::srv::ChangeState>(
-    std::string(get_name()) + "/change_state",
-    rmw_qos_profile_services_default,
-    nullptr);
-
   if (get_parameter("self_manage").get_value<bool>()) {
+    change_state_request_ = std::make_shared<lifecycle_msgs::srv::ChangeState::Request>();
+    change_state_client_ = this->create_client<lifecycle_msgs::srv::ChangeState>(
+      std::string(get_name()) + "/change_state",
+      rmw_qos_profile_services_default,
+      nullptr);
+
     RCLCPP_INFO(get_logger(), "Self-transitioning to INACTIVE");
     change_state_request_->transition.id = lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE;
     change_state_request_->transition.label = "";
@@ -122,7 +133,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
   // If given, set the calibration
   rclcpp::Parameter accelerometer_offset_param;
   if (get_parameter("calibration/accelerometer_offset", accelerometer_offset_param)) {
-    std::vector<int64_t> accelerometer_offset = accelerometer_offset_param.get_value<std::vector<int64_t>>();
+    const std::vector<int64_t> accelerometer_offset = accelerometer_offset_param.get_value<std::vector<int64_t>>();
 
     if (accelerometer_offset.size() != 3) {
       RCLCPP_ERROR(get_logger(), "Invalid value for calibration/accelerometer_offset");
@@ -145,7 +156,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 
   rclcpp::Parameter gyroscope_offset_param;
   if (get_parameter("calibration/gyroscope_offset", gyroscope_offset_param)) {
-    std::vector<int64_t> gyroscope_offset = gyroscope_offset_param.get_value<std::vector<int64_t>>();
+    const std::vector<int64_t> gyroscope_offset = gyroscope_offset_param.get_value<std::vector<int64_t>>();
 
     if (gyroscope_offset.size() != 3) {
       RCLCPP_ERROR(get_logger(), "Invalid value for calibration/gyroscope_offset");
@@ -168,7 +179,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 
   rclcpp::Parameter magnetometer_offset_param;
   if (get_parameter("calibration/magnetometer_offset", magnetometer_offset_param)) {
-    std::vector<int64_t> magnetometer_offset = magnetometer_offset_param.get_value<std::vector<int64_t>>();
+    const std::vector<int64_t> magnetometer_offset = magnetometer_offset_param.get_value<std::vector<int64_t>>();
 
     if (magnetometer_offset.size() != 3) {
       RCLCPP_ERROR(get_logger(), "Invalid value for calibration/magnetometer_offset");
@@ -191,7 +202,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 
   rclcpp::Parameter accelerometer_radius_param;
   if(get_parameter("calibration/accelerometer_radius", accelerometer_radius_param)) {
-      int64_t accelerometer_radius = accelerometer_radius_param.get_value<int64_t>();
+      const int64_t accelerometer_radius = accelerometer_radius_param.get_value<int64_t>();
 
       RCLCPP_INFO(get_logger(), "Setting accelerometer calibration radius");
 
@@ -204,7 +215,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 
   rclcpp::Parameter magnetometer_radius_param;
   if(get_parameter("calibration/magnetometer_radius", magnetometer_radius_param)) {
-      int64_t magnetometer_radius = magnetometer_radius_param.get_value<int64_t>();
+      const int64_t magnetometer_radius = magnetometer_radius_param.get_value<int64_t>();
 
       RCLCPP_INFO(get_logger(), "Setting magnetometer calibration radius");
 
@@ -222,10 +233,49 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
   tmp_msg_ = std::make_shared<sensor_msgs::msg::Temperature>();
   tmp_pub_ = this->create_publisher<sensor_msgs::msg::Temperature>("imu/temp", 1);
 
-  rclcpp::Parameter frame_id = get_parameter("frame_id");
-  imu_msg_->header.frame_id = frame_id.get_value<std::string>();
-  mag_msg_->header.frame_id = frame_id.get_value<std::string>();
-  tmp_msg_->header.frame_id = frame_id.get_value<std::string>();
+  rclcpp::Parameter frame_id_param;
+  if (get_parameter("frame_id", frame_id_param)) {
+    const std::string frame_id = frame_id_param.get_value<std::string>();
+    imu_msg_->header.frame_id = frame_id;
+    mag_msg_->header.frame_id = frame_id;
+    tmp_msg_->header.frame_id = frame_id;
+  }
+
+  rclcpp::Parameter angular_velocity_stdev_param;
+  if (get_parameter("angular_velocity_stdev", angular_velocity_stdev_param)) {
+    const double angular_velocity_stdev = angular_velocity_stdev_param.get_value<double>();
+    const double angular_velocity_variance = angular_velocity_stdev * angular_velocity_stdev;
+    imu_msg_->angular_velocity_covariance[0] = angular_velocity_variance;
+    imu_msg_->angular_velocity_covariance[4] = angular_velocity_variance;
+    imu_msg_->angular_velocity_covariance[8] = angular_velocity_variance;
+  }
+
+  rclcpp::Parameter linear_acceleration_stdev_param;
+  if (get_parameter("linear_acceleration_stdev", linear_acceleration_stdev_param)) {
+    const double linear_acceleration_stdev = linear_acceleration_stdev_param.get_value<double>();
+    const double linear_acceleration_variance = linear_acceleration_stdev * linear_acceleration_stdev;
+    imu_msg_->linear_acceleration_covariance[0] = linear_acceleration_variance;
+    imu_msg_->linear_acceleration_covariance[4] = linear_acceleration_variance;
+    imu_msg_->linear_acceleration_covariance[8] = linear_acceleration_variance;
+  }
+
+  rclcpp::Parameter magnetic_field_stdev_param;
+  if (get_parameter("magnetic_field_stdev", magnetic_field_stdev_param)) {
+    const double magnetic_field_stdev = magnetic_field_stdev_param.get_value<double>();
+    const double magnetic_field_variance = magnetic_field_stdev * magnetic_field_stdev;
+    mag_msg_->magnetic_field_covariance[0] = magnetic_field_variance;
+    mag_msg_->magnetic_field_covariance[4] = magnetic_field_variance;
+    mag_msg_->magnetic_field_covariance[8] = magnetic_field_variance;
+  }
+
+  rclcpp::Parameter orientation_stdev_param;
+  if (get_parameter("orientation_stdev", orientation_stdev_param)) {
+    const double orientation_stdev = orientation_stdev_param.get_value<double>();
+    const double orientation_variance = orientation_stdev * orientation_stdev;
+    imu_msg_->orientation_covariance[0] = orientation_variance;
+    imu_msg_->orientation_covariance[4] = orientation_variance;
+    imu_msg_->orientation_covariance[8] = orientation_variance;
+  }
 
   rclcpp::Parameter frequency = get_parameter("frequency");
   imu_timer_ = create_wall_timer(
