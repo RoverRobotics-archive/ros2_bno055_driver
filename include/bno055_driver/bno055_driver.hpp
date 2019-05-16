@@ -28,6 +28,8 @@
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "rclcpp_lifecycle/lifecycle_publisher.hpp"
 
+#include "diagnostic_updater/diagnostic_updater.hpp"
+
 #include "bno055_driver/bno055_reg.hpp"
 #include "bno055_driver/bno055_uart.hpp"
 #include "bno055_driver/visibility_control.h"
@@ -60,6 +62,7 @@ public:
 
 protected:
   void publish();
+  void publishDiagnostics(diagnostic_updater::DiagnosticStatusWrapper &wrapper);
 
 private:
   std::shared_ptr<BNO055UART> port_;
@@ -72,6 +75,8 @@ private:
   std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::Temperature>> tmp_pub_;
 
   rclcpp::TimerBase::SharedPtr imu_timer_;
+
+  diagnostic_updater::Updater diagnostic_updater_;
 
   std::shared_ptr<lifecycle_msgs::srv::ChangeState::Request> change_state_request_;
   std::shared_ptr<rclcpp::Client<lifecycle_msgs::srv::ChangeState>> change_state_client_;

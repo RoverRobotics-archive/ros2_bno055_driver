@@ -18,6 +18,7 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_ros REQUIRED)
+find_package(diagnostic_updater REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -32,6 +33,7 @@ target_include_directories(bno055_driver PUBLIC
   $<INSTALL_INTERFACE:include>)
 ament_target_dependencies(
   bno055_driver
+  "diagnostic_updater"
   "lifecycle_msgs"
   "rclcpp_lifecycle"
   "sensor_msgs"
