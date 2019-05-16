@@ -27,50 +27,21 @@ BNO055Driver::BNO055Driver(const std::string & node_name)
 {
   RCLCPP_INFO(get_logger(), "%s is called.", __func__);
 
-  rclcpp::node_interfaces::NodeParametersInterface::SharedPtr params =
-    get_node_parameters_interface();
+  declare_parameter("frame_id");
+  declare_parameter("frequency", rclcpp::ParameterValue(30.0f));
+  declare_parameter("port", rclcpp::ParameterValue("/dev/ttyUSB0"));
+  declare_parameter("self_manage", rclcpp::ParameterValue(false));
 
-  params->declare_parameter("frame_id",
-    rclcpp::ParameterValue(),
-    rcl_interfaces::msg::ParameterDescriptor());
-  params->declare_parameter("frequency",
-    rclcpp::ParameterValue(30.0f),
-    rcl_interfaces::msg::ParameterDescriptor());
-  params->declare_parameter("port",
-    rclcpp::ParameterValue("/dev/ttyUSB0"),
-    rcl_interfaces::msg::ParameterDescriptor());
-  params->declare_parameter("self_manage",
-    rclcpp::ParameterValue(false),
-    rcl_interfaces::msg::ParameterDescriptor());
+  declare_parameter("angular_velocity_stdev");
+  declare_parameter("linear_acceleration_stdev");
+  declare_parameter("magnetic_field_stdev");
+  declare_parameter("orientation_stdev");
 
-  params->declare_parameter("angular_velocity_stdev",
-    rclcpp::ParameterValue(),
-    rcl_interfaces::msg::ParameterDescriptor());
-  params->declare_parameter("linear_acceleration_stdev",
-    rclcpp::ParameterValue(),
-    rcl_interfaces::msg::ParameterDescriptor());
-  params->declare_parameter("magnetic_field_stdev",
-    rclcpp::ParameterValue(),
-    rcl_interfaces::msg::ParameterDescriptor());
-  params->declare_parameter("orientation_stdev",
-    rclcpp::ParameterValue(),
-    rcl_interfaces::msg::ParameterDescriptor());
-
-  params->declare_parameter("calibration/accelerometer_offset",
-    rclcpp::ParameterValue(),
-    rcl_interfaces::msg::ParameterDescriptor());
-  params->declare_parameter("calibration/gyroscope_offset",
-    rclcpp::ParameterValue(),
-    rcl_interfaces::msg::ParameterDescriptor());
-  params->declare_parameter("calibration/magnetometer_offset",
-    rclcpp::ParameterValue(),
-    rcl_interfaces::msg::ParameterDescriptor());
-  params->declare_parameter("calibration/accelerometer_radius",
-    rclcpp::ParameterValue(),
-    rcl_interfaces::msg::ParameterDescriptor());
-  params->declare_parameter("calibration/magnetometer_radius",
-    rclcpp::ParameterValue(),
-    rcl_interfaces::msg::ParameterDescriptor());
+  declare_parameter("calibration/accelerometer_offset");
+  declare_parameter("calibration/gyroscope_offset");
+  declare_parameter("calibration/magnetometer_offset");
+  declare_parameter("calibration/accelerometer_radius");
+  declare_parameter("calibration/magnetometer_radius");
 
   diagnostic_updater_.setHardwareID("BNO055 IMU (unconfigured)");
   diagnostic_updater_.add("BNO055 Status", this, &BNO055Driver::publishDiagnostics);
@@ -207,7 +178,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
   }
 
   rclcpp::Parameter accelerometer_radius_param;
-  if(get_parameter("calibration/accelerometer_radius", accelerometer_radius_param)) {
+  if (get_parameter("calibration/accelerometer_radius", accelerometer_radius_param)) {
       const int64_t accelerometer_radius = accelerometer_radius_param.get_value<int64_t>();
 
       RCLCPP_INFO(get_logger(), "Setting accelerometer calibration radius");
@@ -220,7 +191,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
   }
 
   rclcpp::Parameter magnetometer_radius_param;
-  if(get_parameter("calibration/magnetometer_radius", magnetometer_radius_param)) {
+  if (get_parameter("calibration/magnetometer_radius", magnetometer_radius_param)) {
       const int64_t magnetometer_radius = magnetometer_radius_param.get_value<int64_t>();
 
       RCLCPP_INFO(get_logger(), "Setting magnetometer calibration radius");
@@ -428,9 +399,9 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 }
 
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
-  BNO055Driver::on_error(const rclcpp_lifecycle::State &)
+  BNO055Driver::on_error(const rclcpp_lifecycle::State & previous_state)
 {
-  RCLCPP_INFO(get_logger(), "%s is called.", __func__);
+  RCLCPP_INFO(get_logger(), "%s is called from %s.", __func__, previous_state.label().c_str());
 
   diagnostic_updater_.setHardwareID("BNO055 IMU (unconfigured)");
 
@@ -504,12 +475,12 @@ void BNO055Driver::publish() try
 
   diagnostic_updater_.update();
 
-} catch (std::exception &e) {
+} catch (std::exception & e) {
   RCLCPP_ERROR(get_logger(), "Failed to poll and publish data");
   deactivate();
 }
 
-void BNO055Driver::publishDiagnostics(diagnostic_updater::DiagnosticStatusWrapper &wrapper)
+void BNO055Driver::publishDiagnostics(diagnostic_updater::DiagnosticStatusWrapper & wrapper)
 {
   if (!port_ || !port_->isOpen()) {
     wrapper.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Disconnected");
