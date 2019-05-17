@@ -23,7 +23,10 @@ namespace bno055_driver
 {
 
 BNO055Driver::BNO055Driver(const std::string & node_name)
-  : rclcpp_lifecycle::LifecycleNode(node_name)
+  : rclcpp_lifecycle::LifecycleNode(node_name),
+    diagnostic_updater_(
+      rclcpp::Node::make_shared("diagnostic_updater",
+        std::string(get_name()) + "/diagnostic_updater"))
 {
   RCLCPP_INFO(get_logger(), "%s is called.", __func__);
 
