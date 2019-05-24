@@ -207,11 +207,11 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
   }
 
   imu_msg_ = std::make_shared<sensor_msgs::msg::Imu>();
-  imu_pub_ = this->create_publisher<sensor_msgs::msg::Imu>("imu/data", 1);
+  imu_pub_ = this->create_publisher<sensor_msgs::msg::Imu>("imu/data", rclcpp::SensorDataQoS());
   mag_msg_ = std::make_shared<sensor_msgs::msg::MagneticField>();
-  mag_pub_ = this->create_publisher<sensor_msgs::msg::MagneticField>("imu/mag", 1);
+  mag_pub_ = this->create_publisher<sensor_msgs::msg::MagneticField>("imu/mag", rclcpp::SensorDataQoS());
   tmp_msg_ = std::make_shared<sensor_msgs::msg::Temperature>();
-  tmp_pub_ = this->create_publisher<sensor_msgs::msg::Temperature>("imu/temp", 1);
+  tmp_pub_ = this->create_publisher<sensor_msgs::msg::Temperature>("imu/temp", rclcpp::SensorDataQoS());
 
   rclcpp::Parameter frame_id_param;
   if (get_parameter("frame_id", frame_id_param)) {
