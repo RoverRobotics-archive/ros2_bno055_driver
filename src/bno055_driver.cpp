@@ -35,6 +35,8 @@ BNO055Driver::BNO055Driver(const std::string & node_name)
   declare_parameter("port", rclcpp::ParameterValue("/dev/ttyUSB0"));
   declare_parameter("self_manage", rclcpp::ParameterValue(false));
 
+  declare_parameter("use_magnetometer", true);
+
   declare_parameter("angular_velocity_stdev");
   declare_parameter("linear_acceleration_stdev");
   declare_parameter("magnetic_field_stdev");
@@ -307,15 +309,19 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
   BNO055Driver::on_activate(const rclcpp_lifecycle::State &)
 {
   RCLCPP_INFO(get_logger(), "%s is called.", __func__);
+  bool use_magnetometer = get_parameter("use_magnetometer").get_value<bool>();
 
-  // Switch to NDOF mode
+  // Switch operation mode
   port_->write_command_.address = BNO055Register::OPR_MODE;
   port_->write_command_.length = 1;
-  port_->write_command_.data[0] = BNO055OperationMode::NDOF;
+  auto operation_mode = use_magnetometer ? BNO055OperationMode::NDOF : BNO055OperationMode::IMU;
+  port_->write_command_.data[0] = operation_mode;
   port_->write();
 
   imu_pub_->on_activate();
-  mag_pub_->on_activate();
+  if (use_magnetometer) {
+    mag_pub_->on_activate();
+  }
   tmp_pub_->on_activate();
 
   diagnostic_updater_.force_update();
