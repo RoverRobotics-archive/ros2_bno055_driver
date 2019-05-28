@@ -112,6 +112,8 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
   port_->write_command_.data[0] = 0x00;
   port_->write();
 
+  use_magnetometer_ = get_parameter("use_magnetometer").get_value<bool>();
+
   // If given, set the calibration
   rclcpp::Parameter accelerometer_offset_param;
   if (get_parameter("calibration/accelerometer_offset", accelerometer_offset_param)) {
@@ -309,17 +311,16 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
   BNO055Driver::on_activate(const rclcpp_lifecycle::State &)
 {
   RCLCPP_INFO(get_logger(), "%s is called.", __func__);
-  bool use_magnetometer = get_parameter("use_magnetometer").get_value<bool>();
 
   // Switch operation mode
   port_->write_command_.address = BNO055Register::OPR_MODE;
   port_->write_command_.length = 1;
-  auto operation_mode = use_magnetometer ? BNO055OperationMode::NDOF : BNO055OperationMode::IMU;
+  auto operation_mode = use_magnetometer_ ? BNO055OperationMode::NDOF : BNO055OperationMode::IMU;
   port_->write_command_.data[0] = operation_mode;
   port_->write();
 
   imu_pub_->on_activate();
-  if (use_magnetometer) {
+  if (use_magnetometer_) {
     mag_pub_->on_activate();
   }
   tmp_pub_->on_activate();

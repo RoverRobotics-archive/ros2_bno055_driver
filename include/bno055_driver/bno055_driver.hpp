@@ -66,6 +66,7 @@ protected:
 
 private:
   std::shared_ptr<BNO055UART> port_;
+  bool use_magnetometer_;
 
   std::shared_ptr<sensor_msgs::msg::Imu> imu_msg_;
   std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::Imu>> imu_pub_;
