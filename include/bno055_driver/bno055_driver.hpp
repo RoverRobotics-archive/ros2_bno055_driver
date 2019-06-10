@@ -19,16 +19,17 @@
 
 #include "lifecycle_msgs/srv/change_state.hpp"
 
+#include "diagnostic_msgs/msg/diagnostic_array.hpp"
+
 #include "sensor_msgs/msg/imu.hpp"
 #include "sensor_msgs/msg/magnetic_field.hpp"
 #include "sensor_msgs/msg/temperature.hpp"
 
 #include "rclcpp/client.hpp"
+#include "rclcpp/rate.hpp"
 
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "rclcpp_lifecycle/lifecycle_publisher.hpp"
-
-#include "diagnostic_updater/diagnostic_updater.hpp"
 
 #include "bno055_driver/bno055_reg.hpp"
 #include "bno055_driver/bno055_uart.hpp"
@@ -62,7 +63,7 @@ public:
 
 protected:
   void publish();
-  void publishDiagnostics(diagnostic_updater::DiagnosticStatusWrapper &wrapper);
+  void publish_diagnostics();
 
 private:
   std::shared_ptr<BNO055UART> port_;
@@ -74,10 +75,13 @@ private:
   std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::MagneticField>> mag_pub_;
   std::shared_ptr<sensor_msgs::msg::Temperature> tmp_msg_;
   std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::Temperature>> tmp_pub_;
+  std::shared_ptr<diagnostic_msgs::msg::DiagnosticArray> diag_msg_;
+  std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<diagnostic_msgs::msg::DiagnosticArray>> diag_pub_;
 
   rclcpp::TimerBase::SharedPtr imu_timer_;
+  rclcpp::TimerBase::SharedPtr diag_timer_;
 
-  diagnostic_updater::Updater diagnostic_updater_;
+  rclcpp::GenericRate<std::chrono::system_clock> connection_rate_;
 
   std::shared_ptr<lifecycle_msgs::srv::ChangeState::Request> change_state_request_;
   std::shared_ptr<rclcpp::Client<lifecycle_msgs::srv::ChangeState>> change_state_client_;

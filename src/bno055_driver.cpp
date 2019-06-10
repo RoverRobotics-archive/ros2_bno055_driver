@@ -24,12 +24,11 @@ namespace bno055_driver
 
 BNO055Driver::BNO055Driver(const std::string & node_name)
   : rclcpp_lifecycle::LifecycleNode(node_name),
-    diagnostic_updater_(
-      rclcpp::Node::make_shared("diagnostic_updater",
-        std::string(get_name()) + "/diagnostic_updater"))
+    connection_rate_(4.0)
 {
   RCLCPP_INFO(get_logger(), "%s is called.", __func__);
 
+  declare_parameter("diagnostic_period", rclcpp::ParameterValue((rcl_duration_value_t)1));
   declare_parameter("frame_id");
   declare_parameter("frequency", rclcpp::ParameterValue(30.0f));
   declare_parameter("port", rclcpp::ParameterValue("/dev/ttyUSB0"));
@@ -47,10 +46,6 @@ BNO055Driver::BNO055Driver(const std::string & node_name)
   declare_parameter("calibration/magnetometer_offset");
   declare_parameter("calibration/accelerometer_radius");
   declare_parameter("calibration/magnetometer_radius");
-
-  diagnostic_updater_.setHardwareID("BNO055 IMU (unconfigured)");
-  diagnostic_updater_.add("BNO055 Status", this, &BNO055Driver::publishDiagnostics);
-  diagnostic_updater_.force_update();
 
   if (get_parameter("self_manage").get_value<bool>()) {
     change_state_request_ = std::make_shared<lifecycle_msgs::srv::ChangeState::Request>();
@@ -71,11 +66,12 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 {
   RCLCPP_INFO(get_logger(), "%s is called.", __func__);
 
+  // Rate-limit our connection attempts
+  connection_rate_.sleep();
+
   rclcpp::Parameter port_name = get_parameter("port");
   port_ = std::make_shared<BNO055UART>(port_name.get_value<std::string>());
   RCLCPP_DEBUG(get_logger(), "Opened connection to '%s'.", port_->getPort().c_str());
-
-  diagnostic_updater_.setHardwareIDf("BNO055 IMU on %s", port_->getPort().c_str());
 
   // Switch to register page 0
   port_->write_command_.length = 1;
@@ -216,6 +212,12 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
   mag_pub_ = this->create_publisher<sensor_msgs::msg::MagneticField>("imu/mag", rclcpp::SensorDataQoS());
   tmp_msg_ = std::make_shared<sensor_msgs::msg::Temperature>();
   tmp_pub_ = this->create_publisher<sensor_msgs::msg::Temperature>("imu/temp", rclcpp::SensorDataQoS());
+  diag_msg_ = std::make_shared<diagnostic_msgs::msg::DiagnosticArray>();
+  diag_pub_ = this->create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/diagnostics", rclcpp::SystemDefaultsQoS());
+  diag_msg_->status.resize(1);
+  diag_msg_->status[0].name = "BNO055 Status";
+  diag_msg_->status[0].hardware_id = std::string("BNO055 IMU on ") + port_->getPort();
+  diag_msg_->status[0].values.reserve(7);
 
   rclcpp::Parameter frame_id_param;
   if (get_parameter("frame_id", frame_id_param)) {
@@ -223,6 +225,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
     imu_msg_->header.frame_id = frame_id;
     mag_msg_->header.frame_id = frame_id;
     tmp_msg_->header.frame_id = frame_id;
+    diag_msg_->header.frame_id = frame_id;
   }
 
   rclcpp::Parameter angular_velocity_stdev_param;
@@ -267,7 +270,11 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
       1.0 / frequency.get_value<float>())),
     std::bind(&BNO055Driver::publish, this));
 
-  diagnostic_updater_.force_update();
+  rclcpp::Parameter diagnostic_period = get_parameter("diagnostic_period");
+  diag_timer_ = create_wall_timer(
+    std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<rcl_duration_value_t>(
+      diagnostic_period.get_value<rcl_duration_value_t>())),
+    std::bind(&BNO055Driver::publish_diagnostics, this));
 
   if (get_parameter("self_manage").get_value<bool>()) {
     RCLCPP_INFO(get_logger(), "Self-transitioning to ACTIVE");
@@ -283,8 +290,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 {
   RCLCPP_INFO(get_logger(), "%s is called.", __func__);
 
-  diagnostic_updater_.setHardwareID("BNO055 IMU (unconfigured)");
-
+  diag_timer_.reset();
   imu_timer_.reset();
   tmp_pub_.reset();
   tmp_msg_.reset();
@@ -302,7 +308,9 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
   port_->close();
   port_.reset();
 
-  diagnostic_updater_.force_update();
+  publish_diagnostics();
+  diag_pub_.reset();
+  diag_msg_.reset();
 
   return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
@@ -324,8 +332,9 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
     mag_pub_->on_activate();
   }
   tmp_pub_->on_activate();
+  diag_pub_->on_activate();
 
-  diagnostic_updater_.force_update();
+  publish_diagnostics();
 
   return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
@@ -374,7 +383,8 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
         bytes_to_short(&port_->read_response_.data[20])),
     });
 
-  diagnostic_updater_.force_update();
+  publish_diagnostics();
+  diag_pub_->on_deactivate();
 
   return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
@@ -384,8 +394,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 {
   RCLCPP_INFO(get_logger(), "%s is called.", __func__);
 
-  diagnostic_updater_.setHardwareID("BNO055 IMU (unconfigured)");
-
+  diag_timer_.reset();
   imu_timer_.reset();
   tmp_pub_.reset();
   tmp_msg_.reset();
@@ -400,10 +409,14 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 
   port_.reset();
 
+  if (diag_msg_) {
+    publish_diagnostics();
+    diag_pub_.reset();
+    diag_msg_.reset();
+  }
+
   change_state_client_.reset();
   change_state_request_.reset();
-
-  diagnostic_updater_.force_update();
 
   return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
@@ -413,8 +426,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 {
   RCLCPP_INFO(get_logger(), "%s is called from %s.", __func__, previous_state.label().c_str());
 
-  diagnostic_updater_.setHardwareID("BNO055 IMU (unconfigured)");
-
+  diag_timer_.reset();
   imu_timer_.reset();
   tmp_pub_.reset();
   tmp_msg_.reset();
@@ -429,14 +441,18 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 
   port_.reset();
 
+  if (diag_msg_) {
+    publish_diagnostics();
+    diag_pub_.reset();
+    diag_msg_.reset();
+  }
+
   if (get_parameter("self_manage").get_value<bool>()) {
     RCLCPP_INFO(get_logger(), "Self-transitioning to INACTIVE");
     change_state_request_->transition.id = lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE;
     change_state_request_->transition.label = "";
     change_state_future_ = change_state_client_->async_send_request(change_state_request_);
   }
-
-  diagnostic_updater_.force_update();
 
   return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
@@ -482,50 +498,71 @@ void BNO055Driver::publish() try
 
     tmp_pub_->publish(*tmp_msg_);
   }
-
-  diagnostic_updater_.update();
-
 } catch (std::exception & e) {
   RCLCPP_ERROR(get_logger(), "Failed to poll and publish data");
   deactivate();
 }
 
-void BNO055Driver::publishDiagnostics(diagnostic_updater::DiagnosticStatusWrapper & wrapper)
+void BNO055Driver::publish_diagnostics()
+try
 {
+  RCLCPP_DEBUG(get_logger(), "Querying for current IMU diagnostics");
+
+  diag_msg_->header.stamp = now();
+
   if (!port_ || !port_->isOpen()) {
-    wrapper.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Disconnected");
-    return;
+    diag_msg_->status[0].level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+    diag_msg_->status[0].message = "Disconnected";
+    diag_msg_->status[0].values.resize(0);
+  }
+  else
+  {
+    port_->read_command_.address = BNO055Register::CALIB_STAT;
+    port_->read_command_.length = 6;
+    port_->read();
+
+    const uint8_t calib_sys = (port_->read_response_.data[0] >> 0) & 0x03;
+    const uint8_t calib_gyr = (port_->read_response_.data[0] >> 2) & 0x03;
+    const uint8_t calib_acc = (port_->read_response_.data[0] >> 4) & 0x03;
+    const uint8_t calib_mag = (port_->read_response_.data[0] >> 6) & 0x03;
+    const uint8_t self_test = port_->read_response_.data[1] & 0x0F;
+    const uint8_t sys_status = port_->read_response_.data[4];
+    const uint8_t sys_error = port_->read_response_.data[5];
+
+    diag_msg_->status[0].values.resize(7);
+    diag_msg_->status[0].values[0].key = "Calibration (SYS)";
+    diag_msg_->status[0].values[0].value = std::to_string(calib_sys);
+    diag_msg_->status[0].values[1].key = "Calibration (GYR)";
+    diag_msg_->status[0].values[1].value = std::to_string(calib_gyr);
+    diag_msg_->status[0].values[2].key = "Calibration (ACC)";
+    diag_msg_->status[0].values[2].value = std::to_string(calib_acc);
+    diag_msg_->status[0].values[3].key = "Calibration (MAG)";
+    diag_msg_->status[0].values[3].value = std::to_string(calib_mag);
+    diag_msg_->status[0].values[4].key = "Self-Test Status";
+    diag_msg_->status[0].values[4].value = std::to_string(self_test);
+    diag_msg_->status[0].values[5].key = "System Status";
+    diag_msg_->status[0].values[5].value = std::to_string(sys_status);
+    diag_msg_->status[0].values[6].key = "System Error";
+    diag_msg_->status[0].values[6].value = std::to_string(sys_error);
+
+    if (sys_error) {
+      diag_msg_->status[0].level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+      diag_msg_->status[0].message = "BNO055 System Error";
+    } else if (self_test != 0x0F) {
+      diag_msg_->status[0].level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+      diag_msg_->status[0].message = "Self-Test Failure";
+    } else if (calib_sys < 1 || calib_gyr < 1 || calib_acc < 1 || calib_mag < 1) {
+      diag_msg_->status[0].level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+      diag_msg_->status[0].message = "Poorly Calibrated";
+    } else {
+      diag_msg_->status[0].level = diagnostic_msgs::msg::DiagnosticStatus::OK;
+      diag_msg_->status[0].message = "Operating Normally";
+    }
   }
 
-  port_->read_command_.address = BNO055Register::CALIB_STAT;
-  port_->read_command_.length = 6;
-  port_->read();
-
-  const uint8_t calib_sys = (port_->read_response_.data[0] >> 0) & 0x03;
-  const uint8_t calib_gyr = (port_->read_response_.data[0] >> 2) & 0x03;
-  const uint8_t calib_acc = (port_->read_response_.data[0] >> 4) & 0x03;
-  const uint8_t calib_mag = (port_->read_response_.data[0] >> 6) & 0x03;
-  const uint8_t self_test = port_->read_response_.data[1] & 0x0F;
-  const uint8_t sys_status = port_->read_response_.data[4];
-  const uint8_t sys_error = port_->read_response_.data[5];
-
-  wrapper.add<int>("Calibration (SYS)", calib_sys);
-  wrapper.add<int>("Calibration (GYR)", calib_gyr);
-  wrapper.add<int>("Calibration (ACC)", calib_acc);
-  wrapper.add<int>("Calibration (MAG)", calib_mag);
-  wrapper.add<int>("Self-Test Status", self_test);
-  wrapper.add<int>("System Status", sys_status);
-  wrapper.add<int>("System Error", sys_error);
-
-  if (sys_error) {
-    wrapper.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "BNO055 System Error");
-  } else if (self_test != 0x0F) {
-    wrapper.summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "Self-Test Failure");
-  } else if (calib_sys < 1 || calib_gyr < 1 || calib_acc < 1 || calib_mag < 1) {
-    wrapper.summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "Poorly Calibrated");
-  } else {
-    wrapper.summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "BNO055 status OK");
-  }
+  diag_pub_->publish(*diag_msg_);
+} catch (std::exception & e) {
+  RCLCPP_ERROR(get_logger(), "Failed to poll and publish diagnostics");
 }
 
 }  // namespace bno055_driver
