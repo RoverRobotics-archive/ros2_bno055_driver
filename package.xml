@@ -4,22 +4,21 @@
   <name>bno055_driver</name>
   <version>0.0.0</version>
   <description>Driver for the Bosch BNO055 IMU</description>
-  <author email="logans@cottsay.net">Scott K Logan</author>
   <maintainer email="logans@cottsay.net">Scott K Logan</maintainer>
   <license>Apache License 2.0</license>
+  <author email="logans@cottsay.net">Scott K Logan</author>
 
   <buildtool_depend>ament_cmake_ros</buildtool_depend>
 
   <depend>diagnostic_msgs</depend>
   <depend>lifecycle_msgs</depend>
+  <depend>rclcpp</depend>
   <depend>rclcpp_lifecycle</depend>
   <depend>sensor_msgs</depend>
   <depend>serial</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
-
-  <member_of_group>rosidl_interface_packages</member_of_group>
 
   <export>
     <build_type>ament_cmake</build_type>

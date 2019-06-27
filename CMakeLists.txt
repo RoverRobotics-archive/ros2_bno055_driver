@@ -17,9 +17,9 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
-find_package(ament_cmake_ros REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
+find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(serial REQUIRED)
@@ -34,6 +34,7 @@ ament_target_dependencies(
   bno055
   "diagnostic_msgs"
   "lifecycle_msgs"
+  "rclcpp"
   "rclcpp_lifecycle"
   "sensor_msgs"
   "serial"

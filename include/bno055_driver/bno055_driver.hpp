@@ -15,12 +15,16 @@
 #ifndef BNO055_DRIVER__BNO055_DRIVER_HPP_
 #define BNO055_DRIVER__BNO055_DRIVER_HPP_
 
+#include "bno055_driver/bno055_reg.hpp"
+#include "bno055_driver/bno055_uart.hpp"
+
 #include <stdint.h>
 
+#include <memory>
+#include <string>
+
 #include "lifecycle_msgs/srv/change_state.hpp"
-
 #include "diagnostic_msgs/msg/diagnostic_array.hpp"
-
 #include "sensor_msgs/msg/imu.hpp"
 #include "sensor_msgs/msg/magnetic_field.hpp"
 #include "sensor_msgs/msg/temperature.hpp"
@@ -31,9 +35,7 @@
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "rclcpp_lifecycle/lifecycle_publisher.hpp"
 
-#include "bno055_driver/bno055_reg.hpp"
-#include "bno055_driver/bno055_uart.hpp"
-#include "bno055_driver/visibility_control.h"
+#include "bno055_driver/visibility_control.hpp"
 
 namespace bno055_driver
 {
@@ -70,22 +72,22 @@ private:
   std::shared_ptr<BNO055UART> port_;
   bool use_magnetometer_;
 
-  std::shared_ptr<sensor_msgs::msg::Imu> imu_msg_;
-  std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::Imu>> imu_pub_;
-  std::shared_ptr<sensor_msgs::msg::MagneticField> mag_msg_;
-  std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::MagneticField>> mag_pub_;
-  std::shared_ptr<sensor_msgs::msg::Temperature> tmp_msg_;
-  std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::Temperature>> tmp_pub_;
-  std::shared_ptr<diagnostic_msgs::msg::DiagnosticArray> diag_msg_;
-  std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<diagnostic_msgs::msg::DiagnosticArray>> diag_pub_;
+  sensor_msgs::msg::Imu::SharedPtr imu_msg_;
+  rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
+  sensor_msgs::msg::MagneticField::SharedPtr mag_msg_;
+  rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::MagneticField>::SharedPtr mag_pub_;
+  sensor_msgs::msg::Temperature::SharedPtr tmp_msg_;
+  rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::Temperature>::SharedPtr tmp_pub_;
+  diagnostic_msgs::msg::DiagnosticArray::SharedPtr diag_msg_;
+  rclcpp_lifecycle::LifecyclePublisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diag_pub_;
 
   rclcpp::TimerBase::SharedPtr imu_timer_;
   rclcpp::TimerBase::SharedPtr diag_timer_;
 
   rclcpp::GenericRate<std::chrono::system_clock> connection_rate_;
 
-  std::shared_ptr<lifecycle_msgs::srv::ChangeState::Request> change_state_request_;
-  std::shared_ptr<rclcpp::Client<lifecycle_msgs::srv::ChangeState>> change_state_client_;
+  lifecycle_msgs::srv::ChangeState::Request::SharedPtr change_state_request_;
+  rclcpp::Client<lifecycle_msgs::srv::ChangeState>::SharedPtr change_state_client_;
   rclcpp::Client<lifecycle_msgs::srv::ChangeState>::SharedFuture change_state_future_;
 };
 
