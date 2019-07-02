@@ -41,11 +41,11 @@ BNO055Driver::BNO055Driver(const std::string & node_name, const rclcpp::NodeOpti
   declare_parameter("magnetic_field_stdev");
   declare_parameter("orientation_stdev");
 
-  declare_parameter("calibration/accelerometer_offset");
-  declare_parameter("calibration/gyroscope_offset");
-  declare_parameter("calibration/magnetometer_offset");
-  declare_parameter("calibration/accelerometer_radius");
-  declare_parameter("calibration/magnetometer_radius");
+  declare_parameter("calibration.accelerometer_offset");
+  declare_parameter("calibration.gyroscope_offset");
+  declare_parameter("calibration.magnetometer_offset");
+  declare_parameter("calibration.accelerometer_radius");
+  declare_parameter("calibration.magnetometer_radius");
 
   if (get_parameter("self_manage").get_value<bool>()) {
     change_state_request_ = std::make_shared<lifecycle_msgs::srv::ChangeState::Request>();
@@ -112,11 +112,11 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 
   // If given, set the calibration
   rclcpp::Parameter accelerometer_offset_param;
-  if (get_parameter("calibration/accelerometer_offset", accelerometer_offset_param)) {
+  if (get_parameter("calibration.accelerometer_offset", accelerometer_offset_param)) {
     const std::vector<int64_t> accelerometer_offset = accelerometer_offset_param.get_value<std::vector<int64_t>>();
 
     if (accelerometer_offset.size() != 3) {
-      RCLCPP_ERROR(get_logger(), "Invalid value for calibration/accelerometer_offset");
+      RCLCPP_ERROR(get_logger(), "Invalid value for calibration.accelerometer_offset");
     }
     else
     {
@@ -135,11 +135,11 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
   }
 
   rclcpp::Parameter gyroscope_offset_param;
-  if (get_parameter("calibration/gyroscope_offset", gyroscope_offset_param)) {
+  if (get_parameter("calibration.gyroscope_offset", gyroscope_offset_param)) {
     const std::vector<int64_t> gyroscope_offset = gyroscope_offset_param.get_value<std::vector<int64_t>>();
 
     if (gyroscope_offset.size() != 3) {
-      RCLCPP_ERROR(get_logger(), "Invalid value for calibration/gyroscope_offset");
+      RCLCPP_ERROR(get_logger(), "Invalid value for calibration.gyroscope_offset");
     }
     else
     {
@@ -158,11 +158,11 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
   }
 
   rclcpp::Parameter magnetometer_offset_param;
-  if (get_parameter("calibration/magnetometer_offset", magnetometer_offset_param)) {
+  if (get_parameter("calibration.magnetometer_offset", magnetometer_offset_param)) {
     const std::vector<int64_t> magnetometer_offset = magnetometer_offset_param.get_value<std::vector<int64_t>>();
 
     if (magnetometer_offset.size() != 3) {
-      RCLCPP_ERROR(get_logger(), "Invalid value for calibration/magnetometer_offset");
+      RCLCPP_ERROR(get_logger(), "Invalid value for calibration.magnetometer_offset");
     }
     else
     {
@@ -181,7 +181,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
   }
 
   rclcpp::Parameter accelerometer_radius_param;
-  if (get_parameter("calibration/accelerometer_radius", accelerometer_radius_param)) {
+  if (get_parameter("calibration.accelerometer_radius", accelerometer_radius_param)) {
       const int64_t accelerometer_radius = accelerometer_radius_param.get_value<int64_t>();
 
       RCLCPP_INFO(get_logger(), "Setting accelerometer calibration radius");
@@ -194,7 +194,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
   }
 
   rclcpp::Parameter magnetometer_radius_param;
-  if (get_parameter("calibration/magnetometer_radius", magnetometer_radius_param)) {
+  if (get_parameter("calibration.magnetometer_radius", magnetometer_radius_param)) {
       const int64_t magnetometer_radius = magnetometer_radius_param.get_value<int64_t>();
 
       RCLCPP_INFO(get_logger(), "Setting magnetometer calibration radius");
@@ -359,27 +359,27 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
   port_->read_command_.length = 22;
   port_->read();
   set_parameters(std::vector<rclcpp::Parameter> {
-      rclcpp::Parameter("calibration/accelerometer_offset",
+      rclcpp::Parameter("calibration.accelerometer_offset",
         std::vector<int64_t> {
 	  bytes_to_short(&port_->read_response_.data[0]),
           bytes_to_short(&port_->read_response_.data[2]),
 	  bytes_to_short(&port_->read_response_.data[4]),
 	}),
-      rclcpp::Parameter("calibration/magnetometer_offset",
+      rclcpp::Parameter("calibration.magnetometer_offset",
         std::vector<int64_t> {
 	  bytes_to_short(&port_->read_response_.data[6]),
           bytes_to_short(&port_->read_response_.data[8]),
 	  bytes_to_short(&port_->read_response_.data[10]),
 	}),
-      rclcpp::Parameter("calibration/gyroscope_offset",
+      rclcpp::Parameter("calibration.gyroscope_offset",
         std::vector<int64_t> {
 	  bytes_to_short(&port_->read_response_.data[12]),
           bytes_to_short(&port_->read_response_.data[14]),
 	  bytes_to_short(&port_->read_response_.data[16]),
 	}),
-      rclcpp::Parameter("calibration/accelerometer_radius",
+      rclcpp::Parameter("calibration.accelerometer_radius",
         bytes_to_short(&port_->read_response_.data[18])),
-      rclcpp::Parameter("calibration/magnetometer_radius",
+      rclcpp::Parameter("calibration.magnetometer_radius",
         bytes_to_short(&port_->read_response_.data[20])),
     });
 
