@@ -41,7 +41,8 @@ namespace bno055_driver
 class BNO055Driver : public rclcpp_lifecycle::LifecycleNode
 {
 public:
-  explicit BNO055Driver(const std::string & node_name);
+  explicit BNO055Driver(
+    const std::string & node_name, const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
 
   rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
   on_configure(const rclcpp_lifecycle::State &);

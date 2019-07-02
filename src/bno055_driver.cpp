@@ -22,8 +22,8 @@
 namespace bno055_driver
 {
 
-BNO055Driver::BNO055Driver(const std::string & node_name)
-  : rclcpp_lifecycle::LifecycleNode(node_name),
+BNO055Driver::BNO055Driver(const std::string & node_name, const rclcpp::NodeOptions & options)
+  : rclcpp_lifecycle::LifecycleNode(node_name, options),
     connection_rate_(4.0)
 {
   RCLCPP_INFO(get_logger(), "%s is called.", __func__);
