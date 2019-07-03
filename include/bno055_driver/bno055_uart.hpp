@@ -20,42 +20,57 @@
 #include "bno055_driver/bno055_reg.hpp"
 #include "bno055_driver/visibility_control.h"
 
+#ifdef _MSC_VER
+#define BNO055_UART_PACKED(class_or_struct) __pragma(pack(push, 1)) class_or_struct \
+  __pragma(pack(pop))
+#else  // _MSC_VER
+#define BNO055_UART_PACKED(class_or_struct) class_or_struct __attribute__((__packed__))
+#endif  // _MSC_VER
+
 namespace bno055_driver
 {
 
-struct BNO055ReadCommand
-{
-  BNO055MessageType message_type;
-  BNO055RegisterCommand command;
-  BNO055Register address;
-  uint8_t length;
-} __attribute__ ((__packed__));
-
-struct BNO055ReadResponse
-{
-  BNO055MessageType message_type;
-  union
+BNO055_UART_PACKED(
+  struct BNO055ReadCommand
   {
+    BNO055MessageType message_type;
+    BNO055RegisterCommand command;
+    BNO055Register address;
     uint8_t length;
+  }
+);
+
+BNO055_UART_PACKED(
+  struct BNO055ReadResponse
+  {
+    BNO055MessageType message_type;
+    union
+    {
+      uint8_t length;
+      BNO055ResponseStatus response_status;
+    };
+    uint8_t data[128];
+  }
+);
+
+BNO055_UART_PACKED(
+  struct BNO055WriteCommand
+  {
+    BNO055MessageType message_type;
+    BNO055RegisterCommand command;
+    BNO055Register address;
+    uint8_t length;
+    uint8_t data[128];
+  }
+);
+
+BNO055_UART_PACKED(
+  struct BNO055WriteResponse
+  {
+    BNO055MessageType message_type;
     BNO055ResponseStatus response_status;
-  };
-  uint8_t data[128];
-} __attribute__ ((__packed__));
-
-struct BNO055WriteCommand
-{
-  BNO055MessageType message_type;
-  BNO055RegisterCommand command;
-  BNO055Register address;
-  uint8_t length;
-  uint8_t data[128];
-} __attribute__ ((__packed__));
-
-struct BNO055WriteResponse
-{
-  BNO055MessageType message_type;
-  BNO055ResponseStatus response_status;
-} __attribute__ ((__packed__));
+  }
+);
 
 class BNO055UART
 {
