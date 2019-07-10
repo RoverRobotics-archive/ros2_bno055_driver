@@ -12,26 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <memory>
-
-#include "bno055_driver/bno055_driver.hpp"
+#include <gtest/gtest.h>
 
 #include "rclcpp/rclcpp.hpp"
+#include "unix_test_harness.hpp"
 
-int main(int argc, char * argv[])
+TEST(bno055_serial_tests, basic_configuration)
 {
-  rclcpp::init(argc, argv);
+  bno055_test::UnixTestHarness test;
 
-  rclcpp::executors::SingleThreadedExecutor exe;
+  test.driver->register_on_activate(
+    [executor = test.executor](const rclcpp_lifecycle::State &) {
+      executor->cancel();
+      return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+    });
 
-  std::shared_ptr<bno055_driver::BNO055Driver> bno_node =
-    std::make_shared<bno055_driver::BNO055Driver>("bno055_driver");
+  test.executor->spin();
+}
 
-  exe.add_node(bno_node->get_node_base_interface());
+int main(int argc, char ** argv)
+{
+  rclcpp::install_signal_handlers();
 
-  exe.spin();
-
-  rclcpp::shutdown();
-
-  return 0;
+  testing::InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
 }

@@ -12,26 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <memory>
+#ifndef UNIX_TEST_HARNESS_HPP_
+#define UNIX_TEST_HARNESS_HPP_
 
-#include "bno055_driver/bno055_driver.hpp"
+#include <memory>
 
 #include "rclcpp/rclcpp.hpp"
 
-int main(int argc, char * argv[])
+#include "fake_bno055.hpp"
+#include "bno055_driver/bno055_driver.hpp"
+
+namespace bno055_test
 {
-  rclcpp::init(argc, argv);
 
-  rclcpp::executors::SingleThreadedExecutor exe;
+class UnixTestHarness
+{
+public:
+  UnixTestHarness();
 
-  std::shared_ptr<bno055_driver::BNO055Driver> bno_node =
-    std::make_shared<bno055_driver::BNO055Driver>("bno055_driver");
+  rclcpp::Context::SharedPtr context;
+  rclcpp::executors::SingleThreadedExecutor::SharedPtr executor;
 
-  exe.add_node(bno_node->get_node_base_interface());
+  bno055_driver::BNO055Driver::UniquePtr driver;
+  std::unique_ptr<FakeBNO055> fake_bno055;
+};
 
-  exe.spin();
+}  // namespace bno055_test
 
-  rclcpp::shutdown();
-
-  return 0;
-}
+#endif  // UNIX_TEST_HARNESS_HPP_

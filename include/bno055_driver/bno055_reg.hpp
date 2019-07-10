@@ -17,7 +17,7 @@
 
 #include <stdint.h>
 
-#include "bno055_driver/visibility_control.h"
+#include "bno055_driver/visibility_control.hpp"
 
 namespace bno055_driver
 {
@@ -119,5 +119,4 @@ enum BNO055ResponseStatus : uint8_t
 
 }  // namespace bno055_driver
 
-#endif  // BNO055_DRIVER__BNO055_DRIVER_HPP_
-
+#endif  // BNO055_DRIVER__BNO055_REG_HPP_

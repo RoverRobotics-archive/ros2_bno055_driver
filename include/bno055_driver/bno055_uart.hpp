@@ -15,52 +15,69 @@
 #ifndef BNO055_DRIVER__BNO055_UART_HPP_
 #define BNO055_DRIVER__BNO055_UART_HPP_
 
+#include "bno055_driver/bno055_reg.hpp"
+
+#include <string>
+
 #include "serial/serial.h"
 
-#include "bno055_driver/bno055_reg.hpp"
-#include "bno055_driver/visibility_control.h"
+#include "bno055_driver/visibility_control.hpp"
+
+#ifdef _MSC_VER
+#define BNO055_UART_PACKED(class_or_struct) __pragma(pack(push, 1)) class_or_struct \
+  __pragma(pack(pop))
+#else  // _MSC_VER
+#define BNO055_UART_PACKED(class_or_struct) class_or_struct __attribute__((__packed__))
+#endif  // _MSC_VER
 
 namespace bno055_driver
 {
 
-struct BNO055ReadCommand
-{
-  BNO055MessageType message_type;
-  BNO055RegisterCommand command;
-  BNO055Register address;
-  uint8_t length;
-} __attribute__ ((__packed__));
-
-struct BNO055ReadResponse
-{
-  BNO055MessageType message_type;
-  union
+BNO055_UART_PACKED(
+  struct BNO055ReadCommand
   {
+    BNO055MessageType message_type;
+    BNO055RegisterCommand command;
+    BNO055Register address;
     uint8_t length;
+  }
+);
+
+BNO055_UART_PACKED(
+  struct BNO055ReadResponse
+  {
+    BNO055MessageType message_type;
+    union {
+      uint8_t length;
+      BNO055ResponseStatus response_status;
+    };
+    uint8_t data[128];
+  }
+);
+
+BNO055_UART_PACKED(
+  struct BNO055WriteCommand
+  {
+    BNO055MessageType message_type;
+    BNO055RegisterCommand command;
+    BNO055Register address;
+    uint8_t length;
+    uint8_t data[128];
+  }
+);
+
+BNO055_UART_PACKED(
+  struct BNO055WriteResponse
+  {
+    BNO055MessageType message_type;
     BNO055ResponseStatus response_status;
-  };
-  uint8_t data[128];
-} __attribute__ ((__packed__));
-
-struct BNO055WriteCommand
-{
-  BNO055MessageType message_type;
-  BNO055RegisterCommand command;
-  BNO055Register address;
-  uint8_t length;
-  uint8_t data[128];
-} __attribute__ ((__packed__));
-
-struct BNO055WriteResponse
-{
-  BNO055MessageType message_type;
-  BNO055ResponseStatus response_status;
-} __attribute__ ((__packed__));
+  }
+);
 
 class BNO055UART
 {
 public:
-  BNO055UART(const std::string &port);
+  explicit BNO055UART(const std::string & port);
   void close();
   std::string getPort();
   bool isOpen();
@@ -71,8 +88,14 @@ public:
   BNO055ReadResponse read_response_;
   BNO055WriteCommand write_command_;
   BNO055WriteResponse write_response_;
+
 protected:
   void setPage(uint8_t page);
+  template<typename T>
+  size_t read(T * data, const size_t offset, size_t size);
+  template<typename T>
+  size_t write(const T * data, const size_t offset, size_t size);
+
 private:
   uint8_t page_;
   serial::Serial port_;
@@ -80,5 +103,4 @@ private:
 
 }  // namespace bno055_driver
 
-#endif  // BNO055_DRIVER__BNO055_DRIVER_HPP_
-
+#endif  // BNO055_DRIVER__BNO055_UART_HPP_
