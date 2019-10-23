@@ -19,11 +19,25 @@
 #include <string>
 #include <vector>
 
+#include "rclcpp_components/register_node_macro.hpp"
+
 #define bytes_to_ushort(addr) (*reinterpret_cast<uint16_t *>(addr))
 #define bytes_to_short(addr) (*reinterpret_cast<int16_t *>(addr))
 
+RCLCPP_COMPONENTS_REGISTER_NODE(bno055_driver::BNO055Driver)
+
 namespace bno055_driver
 {
+
+BNO055Driver::BNO055Driver()
+: BNO055Driver("bno055_driver")
+{
+}
+
+BNO055Driver::BNO055Driver(const rclcpp::NodeOptions & options)
+: BNO055Driver("bno055_driver", options)
+{
+}
 
 BNO055Driver::BNO055Driver(const std::string & node_name, const rclcpp::NodeOptions & options)
 : rclcpp_lifecycle::LifecycleNode(node_name, options),
