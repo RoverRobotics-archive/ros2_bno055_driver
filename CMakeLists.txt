@@ -20,6 +20,7 @@ find_package(ament_cmake REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_components REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(serial REQUIRED)
@@ -35,10 +36,15 @@ ament_target_dependencies(
   "diagnostic_msgs"
   "lifecycle_msgs"
   "rclcpp"
+  "rclcpp_components"
   "rclcpp_lifecycle"
   "sensor_msgs"
   "serial"
 )
+
+if(BUILD_SHARED_LIBS)
+  rclcpp_components_register_nodes(bno055 "bno055_driver::BNO055Driver")
+endif()
 
 # Causes the visibility macros to use dllexport rather than dllimport,
 # which is appropriate when building the dll but not consuming it.

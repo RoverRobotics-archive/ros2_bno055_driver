@@ -25,7 +25,7 @@ int main(int argc, char * argv[])
   rclcpp::executors::SingleThreadedExecutor exe;
 
   std::shared_ptr<bno055_driver::BNO055Driver> bno_node =
-    std::make_shared<bno055_driver::BNO055Driver>("bno055_driver");
+    std::make_shared<bno055_driver::BNO055Driver>();
 
   exe.add_node(bno_node->get_node_base_interface());
 

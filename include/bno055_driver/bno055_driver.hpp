@@ -43,6 +43,11 @@ namespace bno055_driver
 class BNO055Driver : public rclcpp_lifecycle::LifecycleNode
 {
 public:
+  BNO055Driver();
+
+  BNO055_DRIVER_PUBLIC
+  explicit BNO055Driver(const rclcpp::NodeOptions & options);
+
   explicit BNO055Driver(
     const std::string & node_name, const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
 
