@@ -122,7 +122,8 @@ BNO055Driver::on_configure(const rclcpp_lifecycle::State &)
   // Set the units
   uint8_t unit_config = 0b00000110;
   rclcpp::Parameter angular_velocity_param;
-  if (get_parameter("unit.angular_velocity", angular_velocity_param)) {
+  if (get_parameter("unit.angular_velocity", angular_velocity_param) &&
+    angular_velocity_param.get_type() == rclcpp::PARAMETER_STRING) {
     if (angular_velocity_param.as_string() == "rps") {
       RCLCPP_INFO(get_logger(), "Setting unit angular_velocity to rad/s");
       unit_config |= 0b00000010;
@@ -137,7 +138,8 @@ BNO055Driver::on_configure(const rclcpp_lifecycle::State &)
   }
 
   rclcpp::Parameter linear_acceleration_param;
-  if (get_parameter("unit.linear_acceleration", linear_acceleration_param)) {
+  if (get_parameter("unit.linear_acceleration", linear_acceleration_param) &&
+    linear_acceleration_param.get_type() == rclcpp::PARAMETER_STRING) {
     if (linear_acceleration_param.as_string() == "mps2") {
       RCLCPP_INFO(get_logger(), "Setting unit linear_acceleration to m/s2");
       unit_config &= ~0b00000001;
@@ -156,7 +158,8 @@ BNO055Driver::on_configure(const rclcpp_lifecycle::State &)
   }
 
   rclcpp::Parameter magnetic_field_param;
-  if (get_parameter("unit.magnetic_field", magnetic_field_param)) {
+  if (get_parameter("unit.magnetic_field", magnetic_field_param) &&
+    magnetic_field_param.get_type() == rclcpp::PARAMETER_STRING) {
     if (magnetic_field_param.as_string() == "T") {
       RCLCPP_INFO(get_logger(), "Setting unit magnetic_field to T");
       mag_scale_ = scale::mag_to_t;
@@ -169,7 +172,8 @@ BNO055Driver::on_configure(const rclcpp_lifecycle::State &)
   }
 
   rclcpp::Parameter temperature_param;
-  if (get_parameter("unit.temperature", temperature_param)) {
+  if (get_parameter("unit.temperature", temperature_param) &&
+    temperature_param.get_type() == rclcpp::PARAMETER_STRING) {
     if (temperature_param.as_string() == "C") {
       RCLCPP_INFO(get_logger(), "Setting unit temperature to C");
       unit_config &= ~0b00010000;

@@ -46,7 +46,7 @@ namespace bno055_driver
      * Table 3-31: Quaternion data representation 
      * 1 Quaternion (unit less) = 2^14 LSB 
      */
-    constexpr double quat_to_quat = 16384;
+    constexpr double quat = 16384;
 
     /**
      * Table 3-37: Temperature data representation 
