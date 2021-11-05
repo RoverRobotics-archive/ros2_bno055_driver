@@ -112,7 +112,7 @@ BNO055Driver::on_configure(const rclcpp_lifecycle::State &)
 
   // Set the units
   port_->write_command_.address = BNO055Register::UNIT_SEL;
-  port_->write_command_.data[0] = 0x02;
+  port_->write_command_.data[0] = 0b00000110;
   port_->write();
 
   // Set power mode
@@ -491,40 +491,40 @@ void BNO055Driver::publish() try
 {
   RCLCPP_DEBUG(get_logger(), "Querying for current IMU data");
 
-  port_->read_command_.address = BNO055Register::MAG_DATA_X_LSB;
-  port_->read_command_.length = 40;
+  port_->read_command_.address = BNO055Register::ACC_DATA_X_LSB;
+  port_->read_command_.length = 46;
   port_->read();
 
   rclcpp::Time stamp = now();
 
   if (imu_pub_->is_activated()) {
     imu_msg_->header.stamp = stamp;
-    imu_msg_->angular_velocity.x = bytes_to_short(&port_->read_response_.data[6]) / 900.0;
-    imu_msg_->angular_velocity.y = bytes_to_short(&port_->read_response_.data[8]) / 900.0;
-    imu_msg_->angular_velocity.z = bytes_to_short(&port_->read_response_.data[10]) / 900.0;
-    imu_msg_->linear_acceleration.x = bytes_to_short(&port_->read_response_.data[26]) / 1000.0;
-    imu_msg_->linear_acceleration.y = bytes_to_short(&port_->read_response_.data[28]) / 1000.0;
-    imu_msg_->linear_acceleration.z = bytes_to_short(&port_->read_response_.data[30]) / 1000.0;
-    imu_msg_->orientation.w = bytes_to_short(&port_->read_response_.data[18]) / 16384.0;
-    imu_msg_->orientation.x = bytes_to_short(&port_->read_response_.data[20]) / 16384.0;
-    imu_msg_->orientation.y = bytes_to_short(&port_->read_response_.data[22]) / 16384.0;
-    imu_msg_->orientation.z = bytes_to_short(&port_->read_response_.data[24]) / 16384.0;
+    imu_msg_->angular_velocity.x = bytes_to_short(&port_->read_response_.data[12]) / 900.0;
+    imu_msg_->angular_velocity.y = bytes_to_short(&port_->read_response_.data[14]) / 900.0;
+    imu_msg_->angular_velocity.z = bytes_to_short(&port_->read_response_.data[16]) / 900.0;
+    imu_msg_->linear_acceleration.x = bytes_to_short(&port_->read_response_.data[0]) / 100.0;
+    imu_msg_->linear_acceleration.y = bytes_to_short(&port_->read_response_.data[2]) / 100.0;
+    imu_msg_->linear_acceleration.z = bytes_to_short(&port_->read_response_.data[4]) / 100.0;
+    imu_msg_->orientation.w = bytes_to_short(&port_->read_response_.data[24]) / 16384.0;
+    imu_msg_->orientation.x = bytes_to_short(&port_->read_response_.data[26]) / 16384.0;
+    imu_msg_->orientation.y = bytes_to_short(&port_->read_response_.data[28]) / 16384.0;
+    imu_msg_->orientation.z = bytes_to_short(&port_->read_response_.data[30]) / 16384.0;
 
     imu_pub_->publish(*imu_msg_);
   }
 
   if (mag_pub_->is_activated()) {
     mag_msg_->header.stamp = stamp;
-    mag_msg_->magnetic_field.x = bytes_to_short(&port_->read_response_.data[0]) / 16000000.0;
-    mag_msg_->magnetic_field.y = bytes_to_short(&port_->read_response_.data[2]) / 16000000.0;
-    mag_msg_->magnetic_field.z = bytes_to_short(&port_->read_response_.data[4]) / 16000000.0;
+    mag_msg_->magnetic_field.x = bytes_to_short(&port_->read_response_.data[6]) / 16000000.0;
+    mag_msg_->magnetic_field.y = bytes_to_short(&port_->read_response_.data[8]) / 16000000.0;
+    mag_msg_->magnetic_field.z = bytes_to_short(&port_->read_response_.data[10]) / 16000000.0;
 
     mag_pub_->publish(*mag_msg_);
   }
 
   if (tmp_pub_->is_activated()) {
     tmp_msg_->header.stamp = stamp;
-    tmp_msg_->temperature = port_->read_response_.data[38];
+    tmp_msg_->temperature = port_->read_response_.data[44];
 
     tmp_pub_->publish(*tmp_msg_);
   }
