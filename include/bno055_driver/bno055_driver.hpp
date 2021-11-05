@@ -94,6 +94,11 @@ private:
   lifecycle_msgs::srv::ChangeState::Request::SharedPtr change_state_request_;
   rclcpp::Client<lifecycle_msgs::srv::ChangeState>::SharedPtr change_state_client_;
   rclcpp::Client<lifecycle_msgs::srv::ChangeState>::SharedFuture change_state_future_;
+
+  double vel_scale_;
+  double lacc_scale_;
+  double mag_scale_;
+  double temp_scale_;
 };
 
 }  // namespace bno055_driver
