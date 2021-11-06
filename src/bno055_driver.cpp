@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "bno055_driver/bno055_driver.hpp"
+#include "bno055_driver/bno055_scales.hpp"
 
 #include <chrono>
 #include <memory>
@@ -64,6 +65,14 @@ BNO055Driver::BNO055Driver(const std::string & node_name, const rclcpp::NodeOpti
   declare_parameter("calibration.accelerometer_radius");
   declare_parameter("calibration.magnetometer_radius");
 
+  /**
+   * Set SI by default after ROS REP 103
+   */
+  declare_parameter<std::string>("unit.angular_velocity", "rps");
+  declare_parameter<std::string>("unit.linear_acceleration", "mps2");
+  declare_parameter<std::string>("unit.magnetic_field", "T");
+  declare_parameter<std::string>("unit.temperature", "C");
+
   if (get_parameter("self_manage").get_value<bool>()) {
     change_state_request_ = std::make_shared<lifecycle_msgs::srv::ChangeState::Request>();
     change_state_client_ = this->create_client<lifecycle_msgs::srv::ChangeState>(
@@ -111,8 +120,75 @@ BNO055Driver::on_configure(const rclcpp_lifecycle::State &)
   port_->write();
 
   // Set the units
+  uint8_t unit_config = 0b00000110;
+  rclcpp::Parameter angular_velocity_param;
+  if (get_parameter("unit.angular_velocity", angular_velocity_param) &&
+    angular_velocity_param.get_type() == rclcpp::PARAMETER_STRING) {
+    if (angular_velocity_param.as_string() == "rps") {
+      RCLCPP_INFO(get_logger(), "Setting unit angular_velocity to rad/s");
+      unit_config |= 0b00000010;
+      vel_scale_ = scale::vel_to_rps;
+    } else if (angular_velocity_param.as_string() == "dps") {
+      RCLCPP_INFO(get_logger(), "Setting unit angular_velocity to deg/s");
+      unit_config &= ~0b00000010;
+      vel_scale_ = scale::vel_to_dps;
+    } else {
+      RCLCPP_ERROR(get_logger(), "Invalid value for unit angular_velocity");
+    }
+  }
+
+  rclcpp::Parameter linear_acceleration_param;
+  if (get_parameter("unit.linear_acceleration", linear_acceleration_param) &&
+    linear_acceleration_param.get_type() == rclcpp::PARAMETER_STRING) {
+    if (linear_acceleration_param.as_string() == "mps2") {
+      RCLCPP_INFO(get_logger(), "Setting unit linear_acceleration to m/s2");
+      unit_config &= ~0b00000001;
+      lacc_scale_ = scale::acc_to_mps2;
+    } else if (linear_acceleration_param.as_string() == "mg") {
+      RCLCPP_INFO(get_logger(), "Setting unit linear_acceleration to mg");
+      unit_config |= 0b00000001;
+      lacc_scale_ = scale::acc_to_mg;
+    } else if (linear_acceleration_param.as_string() == "g") {
+      RCLCPP_INFO(get_logger(), "Setting unit linear_acceleration to g");
+      unit_config |= 0b00000001;
+      lacc_scale_ = scale::acc_to_g;
+    } else {
+      RCLCPP_ERROR(get_logger(), "Invalid value for unit linear_acceleration");
+    }
+  }
+
+  rclcpp::Parameter magnetic_field_param;
+  if (get_parameter("unit.magnetic_field", magnetic_field_param) &&
+    magnetic_field_param.get_type() == rclcpp::PARAMETER_STRING) {
+    if (magnetic_field_param.as_string() == "T") {
+      RCLCPP_INFO(get_logger(), "Setting unit magnetic_field to T");
+      mag_scale_ = scale::mag_to_t;
+    } else if (magnetic_field_param.as_string() == "uT") {
+      RCLCPP_INFO(get_logger(), "Setting unit magnetic_field to uT");
+      mag_scale_ = scale::mag_to_ut;
+    } else {
+      RCLCPP_ERROR(get_logger(), "Invalid value for unit magnetic_field");
+    }
+  }
+
+  rclcpp::Parameter temperature_param;
+  if (get_parameter("unit.temperature", temperature_param) &&
+    temperature_param.get_type() == rclcpp::PARAMETER_STRING) {
+    if (temperature_param.as_string() == "C") {
+      RCLCPP_INFO(get_logger(), "Setting unit temperature to C");
+      unit_config &= ~0b00010000;
+      temp_scale_ = scale::temp_to_c;
+    } else if (temperature_param.as_string() == "F") {
+      RCLCPP_INFO(get_logger(), "Setting unit temperature to F");
+      unit_config |= 0b00010000;
+      temp_scale_ = scale::temp_to_f;
+    } else {
+      RCLCPP_ERROR(get_logger(), "Invalid value for unit temperature");
+    }
+  }
+
   port_->write_command_.address = BNO055Register::UNIT_SEL;
-  port_->write_command_.data[0] = 0x02;
+  port_->write_command_.data[0] = unit_config;
   port_->write();
 
   // Set power mode
@@ -491,40 +567,42 @@ void BNO055Driver::publish() try
 {
   RCLCPP_DEBUG(get_logger(), "Querying for current IMU data");
 
-  port_->read_command_.address = BNO055Register::MAG_DATA_X_LSB;
-  port_->read_command_.length = 40;
+  port_->read_command_.address = BNO055Register::ACC_DATA_X_LSB;
+  port_->read_command_.length = 46;
   port_->read();
 
   rclcpp::Time stamp = now();
 
   if (imu_pub_->is_activated()) {
     imu_msg_->header.stamp = stamp;
-    imu_msg_->angular_velocity.x = bytes_to_short(&port_->read_response_.data[6]) / 900.0;
-    imu_msg_->angular_velocity.y = bytes_to_short(&port_->read_response_.data[8]) / 900.0;
-    imu_msg_->angular_velocity.z = bytes_to_short(&port_->read_response_.data[10]) / 900.0;
-    imu_msg_->linear_acceleration.x = bytes_to_short(&port_->read_response_.data[26]) / 1000.0;
-    imu_msg_->linear_acceleration.y = bytes_to_short(&port_->read_response_.data[28]) / 1000.0;
-    imu_msg_->linear_acceleration.z = bytes_to_short(&port_->read_response_.data[30]) / 1000.0;
-    imu_msg_->orientation.w = bytes_to_short(&port_->read_response_.data[18]) / 16384.0;
-    imu_msg_->orientation.x = bytes_to_short(&port_->read_response_.data[20]) / 16384.0;
-    imu_msg_->orientation.y = bytes_to_short(&port_->read_response_.data[22]) / 16384.0;
-    imu_msg_->orientation.z = bytes_to_short(&port_->read_response_.data[24]) / 16384.0;
+    imu_msg_->angular_velocity.x = bytes_to_short(&port_->read_response_.data[12]) / vel_scale_;
+    imu_msg_->angular_velocity.y = bytes_to_short(&port_->read_response_.data[14]) / vel_scale_;
+    imu_msg_->angular_velocity.z = bytes_to_short(&port_->read_response_.data[16]) / vel_scale_;
+
+    imu_msg_->linear_acceleration.x = bytes_to_short(&port_->read_response_.data[0]) / lacc_scale_;
+    imu_msg_->linear_acceleration.y = bytes_to_short(&port_->read_response_.data[2]) / lacc_scale_;
+    imu_msg_->linear_acceleration.z = bytes_to_short(&port_->read_response_.data[4]) / lacc_scale_;
+
+    imu_msg_->orientation.w = bytes_to_short(&port_->read_response_.data[24]) / scale::quat;
+    imu_msg_->orientation.x = bytes_to_short(&port_->read_response_.data[26]) / scale::quat;
+    imu_msg_->orientation.y = bytes_to_short(&port_->read_response_.data[28]) / scale::quat;
+    imu_msg_->orientation.z = bytes_to_short(&port_->read_response_.data[30]) / scale::quat;
 
     imu_pub_->publish(*imu_msg_);
   }
 
   if (mag_pub_->is_activated()) {
     mag_msg_->header.stamp = stamp;
-    mag_msg_->magnetic_field.x = bytes_to_short(&port_->read_response_.data[0]) / 16000000.0;
-    mag_msg_->magnetic_field.y = bytes_to_short(&port_->read_response_.data[2]) / 16000000.0;
-    mag_msg_->magnetic_field.z = bytes_to_short(&port_->read_response_.data[4]) / 16000000.0;
+    mag_msg_->magnetic_field.x = bytes_to_short(&port_->read_response_.data[6]) / mag_scale_;
+    mag_msg_->magnetic_field.y = bytes_to_short(&port_->read_response_.data[8]) / mag_scale_;
+    mag_msg_->magnetic_field.z = bytes_to_short(&port_->read_response_.data[10]) / mag_scale_;
 
     mag_pub_->publish(*mag_msg_);
   }
 
   if (tmp_pub_->is_activated()) {
     tmp_msg_->header.stamp = stamp;
-    tmp_msg_->temperature = port_->read_response_.data[38];
+    tmp_msg_->temperature = port_->read_response_.data[44] / temp_scale_;
 
     tmp_pub_->publish(*tmp_msg_);
   }

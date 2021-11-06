@@ -40,7 +40,7 @@ UnixTestHarness::UnixTestHarness()
 
   driver = std::make_unique<bno055_driver::BNO055Driver>("test_driver", node_options);
 
-  rclcpp::executor::ExecutorArgs exe_args;
+  rclcpp::ExecutorOptions exe_args;
   exe_args.context = context;
   executor = std::make_shared<rclcpp::executors::SingleThreadedExecutor>(exe_args);
   executor->add_node(driver->get_node_base_interface());
